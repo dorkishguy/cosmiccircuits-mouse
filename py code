@@ -1,28 +1,107 @@
+
+"""
+WiFi Mouse Receiver — PC Side
+Fixes:
+  - Uses mouseDown/mouseUp instead of click() — no spam-clicking
+  - _pause=False on all pyautogui calls to eliminate 0.1 s lag
+  - Bitmask protocol matches updated ESP8266 firmware
+  - Graceful cleanup on Ctrl-C (releases any held buttons)
+  - Prints local IP so you can verify it matches pcIP in firmware
+ 
+Run:  pip install pyautogui
+      python receiver.py
+"""
+ 
 import socket
 import pyautogui
-
-# Failsafe: Move mouse to top-left corner of screen to kill the script
-pyautogui.FAILSAFE = True 
-
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind(("0.0.0.0", 5005))
-
-print("Listening for 7-button mouse data...")
-
-while True:
-    data, _ = sock.recvfrom(1024)
+import sys
+ 
+# ── Settings ────────────────────────────────────────────────
+UDP_IP   = "0.0.0.0"
+UDP_PORT = 5005
+ 
+# Safety: move mouse to top-left corner to raise FailSafeException and quit
+pyautogui.FAILSAFE = True
+pyautogui.PAUSE    = 0.0  # Disable the default 0.1 s pause globally
+ 
+# ── Show local IP as a sanity check ─────────────────────────
+import socket as _s
+def get_local_ip():
     try:
-        parts = data.decode().split(",")
-        if len(parts) == 5:
-            x, y, l, r, m = map(int, parts)
-            
-            # Move relative
+        tmp = _s.socket(_s.AF_INET, _s.SOCK_DGRAM)
+        tmp.connect(("8.8.8.8", 80))
+        ip = tmp.getsockname()[0]
+        tmp.close()
+        return ip
+    except Exception:
+        return "unknown"
+ 
+print(f"Your PC IP  : {get_local_ip()}  ← must match pcIP in firmware")
+print(f"Listening on: UDP port {UDP_PORT}")
+print("Move mouse to TOP-LEFT corner to emergency-stop.\n")
+ 
+# ── UDP socket ───────────────────────────────────────────────
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind((UDP_IP, UDP_PORT))
+ 
+# Track held state so we can release on exit
+held = {"left": False, "right": False, "middle": False}
+ 
+def release_all():
+    """Make sure no mouse button is stuck down on exit."""
+    for btn, is_held in held.items():
+        if is_held:
+            try:
+                pyautogui.mouseUp(button=btn, _pause=False)
+            except Exception:
+                pass
+ 
+# ── Main loop ────────────────────────────────────────────────
+try:
+    while True:
+        data, addr = sock.recvfrom(256)
+        try:
+            parts = data.decode().strip().split(",")
+            if len(parts) != 3:
+                continue
+ 
+            x, y, click_bits = int(parts[0]), int(parts[1]), int(parts[2])
+ 
+            # Movement (no pause so it feels instant)
             if x != 0 or y != 0:
                 pyautogui.moveRel(x, y, _pause=False)
-            
-            # Click actions
-            if l: pyautogui.click(button='left')
-            if r: pyautogui.click(button='right')
-            if m: pyautogui.click(button='middle')
-    except:
-        continue
+ 
+            # --- Decode click bitmask ---
+            # bit 0 = left down   bit 1 = left up
+            # bit 2 = right down  bit 3 = right up
+            # bit 4 = mid down    bit 5 = mid up
+ 
+            btn_map = [
+                (0, 1, "left"),
+                (2, 3, "right"),
+                (4, 5, "middle"),
+            ]
+ 
+            for down_bit, up_bit, btn in btn_map:
+                if click_bits & (1 << down_bit):
+                    pyautogui.mouseDown(button=btn, _pause=False)
+                    held[btn] = True
+                if click_bits & (1 << up_bit):
+                    pyautogui.mouseUp(button=btn, _pause=False)
+                    held[btn] = False
+ 
+        except (ValueError, IndexError) as e:
+            print(f"[parse error] {e}  raw={data}")
+ 
+except KeyboardInterrupt:
+    print("\nShutting down — releasing all buttons.")
+    release_all()
+    sock.close()
+    sys.exit(0)
+ 
+except pyautogui.FailSafeException:
+    print("\nFail-safe triggered (mouse hit top-left). Releasing buttons & exiting.")
+    release_all()
+    sock.close()
+    sys.exit(0)
+ 
