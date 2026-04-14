@@ -1,0 +1,28 @@
+import socket
+import pyautogui
+
+# Failsafe: Move mouse to top-left corner of screen to kill the script
+pyautogui.FAILSAFE = True 
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind(("0.0.0.0", 5005))
+
+print("Listening for 7-button mouse data...")
+
+while True:
+    data, _ = sock.recvfrom(1024)
+    try:
+        parts = data.decode().split(",")
+        if len(parts) == 5:
+            x, y, l, r, m = map(int, parts)
+            
+            # Move relative
+            if x != 0 or y != 0:
+                pyautogui.moveRel(x, y, _pause=False)
+            
+            # Click actions
+            if l: pyautogui.click(button='left')
+            if r: pyautogui.click(button='right')
+            if m: pyautogui.click(button='middle')
+    except:
+        continue
