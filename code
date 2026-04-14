@@ -15,10 +15,10 @@ const int   port     = 5005;
 // --- Pin Definitions ---
 #define UP_PIN    D1   // GPIO5
 #define DOWN_PIN  D2   // GPIO4
-#define LEFT_PIN  D3   // GPIO0  <-- unplug before upload!
-#define RIGHT_PIN D4   // GPIO2  <-- unplug before upload!
-#define L_CLICK   D5   // GPIO14
-#define R_CLICK   D6   // GPIO12
+#define LEFT_PIN  D6   // GPIO0  <-- unplug before upload!
+#define RIGHT_PIN D7   // GPIO2  <-- unplug before upload!
+#define L_CLICK   D8   // GPIO14
+#define R_CLICK   D0   // GPIO12
 #define M_CLICK   D7   // GPIO13
 
 WiFiUDP udp;
